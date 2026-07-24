@@ -4,6 +4,10 @@ pipeline {
     environment {
         PROJECT_NAME = "ai-media-assistant"
         COMPOSE_FILE = "docker-compose.prod.yml"
+
+        // Faster Docker Builds
+        DOCKER_BUILDKIT = "1"
+        COMPOSE_DOCKER_CLI_BUILD = "1"
     }
 
     options {
@@ -59,7 +63,7 @@ pipeline {
                     docker compose \
                         -p ${PROJECT_NAME} \
                         -f ${COMPOSE_FILE} \
-                        build --pull
+                        build
                 '''
             }
         }
