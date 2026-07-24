@@ -34,6 +34,7 @@ services:
 
     networks:
       - ai-media-network
+      - reverse-proxy
 
   frontend:
     build:
@@ -53,7 +54,11 @@ services:
 
     networks:
       - ai-media-network
+      - reverse-proxy
 
 networks:
   ai-media-network:
     driver: bridge
+
+  reverse-proxy:
+    external: true
