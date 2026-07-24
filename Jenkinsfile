@@ -139,12 +139,38 @@ pipeline {
                     echo "Verifying Frontend..."
                     echo "========================================"
 
-                    sleep 10
+                    FRONTEND_OK=false
 
-                    curl -fsI http://localhost:3000
+                    for i in $(seq 1 20)
+                    do
+                        if docker compose \
+                            -p ${PROJECT_NAME} \
+                            -f ${COMPOSE_FILE} \
+                            exec -T frontend \
+                            wget -qO- http://127.0.0.1 >/dev/null 2>&1
+                        then
+                            echo ""
+                            echo "✅ Frontend Verified Successfully."
+                            FRONTEND_OK=true
+                            break
+                        fi
 
-                    echo ""
-                    echo "✅ Frontend Verified Successfully."
+                        echo "Attempt $i/20..."
+                        sleep 3
+                    done
+
+                    if [ "$FRONTEND_OK" != "true" ]
+                    then
+                        echo ""
+                        echo "❌ Frontend Verification Failed"
+
+                        docker compose \
+                            -p ${PROJECT_NAME} \
+                            -f ${COMPOSE_FILE} \
+                            logs frontend
+
+                        exit 1
+                    fi
                 '''
             }
         }
