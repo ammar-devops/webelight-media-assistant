@@ -1,65 +1,237 @@
-stage('Health Check') {
-    steps {
-        sh '''
-            echo "========================================"
-            echo "Health Check"
-            echo "========================================"
+pipeline {
+    agent any
 
-            echo ""
-            echo "Waiting for Backend..."
+    environment {
+        PROJECT_NAME = "ai-media-assistant"
+        COMPOSE_FILE = "docker-compose.prod.yml"
 
-            BACKEND_OK=false
+        // Faster Docker Builds
+        DOCKER_BUILDKIT = "1"
+        COMPOSE_DOCKER_CLI_BUILD = "1"
+    }
 
-            for i in $(seq 1 30); do
-                if curl -fs http://localhost:8000/ >/dev/null 2>&1; then
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Environment Check') {
+            steps {
+                sh '''
+                    echo "========================================"
+                    echo "AI Media Assistant Deployment"
+                    echo "========================================"
+
+                    pwd
+                    ls -la
+
                     echo ""
-                    echo "✅ Backend Started Successfully."
-                    BACKEND_OK=true
-                    break
-                fi
+                    echo "Docker Version"
+                    docker --version
 
-                echo "Attempt $i/30 - Backend not ready..."
-                sleep 5
-            done
-
-            if [ "$BACKEND_OK" != "true" ]; then
-                echo ""
-                echo "❌ Backend Failed to Start!"
-                docker compose -p ai-media-assistant -f docker-compose.prod.yml logs backend
-                exit 1
-            fi
-
-            echo ""
-            echo "Waiting for Frontend..."
-
-            FRONTEND_OK=false
-
-            for i in $(seq 1 30); do
-                if curl -fs http://localhost:3000 >/dev/null 2>&1; then
                     echo ""
-                    echo "✅ Frontend Started Successfully."
-                    FRONTEND_OK=true
-                    break
-                fi
+                    echo "Docker Compose Version"
+                    docker compose version
 
-                echo "Attempt $i/30 - Frontend not ready..."
-                sleep 5
-            done
+                    echo ""
+                    echo "Running Containers"
+                    docker ps
+                '''
+            }
+        }
 
-            if [ "$FRONTEND_OK" != "true" ]; then
+        stage('Validate Docker Compose') {
+            steps {
+                sh '''
+                    docker compose -f ${COMPOSE_FILE} config
+                '''
+            }
+        }
+
+        stage('Build Images') {
+            steps {
+                sh '''
+                    docker compose \
+                        -p ${PROJECT_NAME} \
+                        -f ${COMPOSE_FILE} \
+                        build --pull
+                '''
+            }
+        }
+
+        stage('Stop Previous Deployment') {
+            steps {
+                sh '''
+                    docker compose \
+                        -p ${PROJECT_NAME} \
+                        -f ${COMPOSE_FILE} \
+                        down --remove-orphans || true
+                '''
+            }
+        }
+
+        stage('Start Deployment') {
+            steps {
+                sh '''
+                    docker compose \
+                        -p ${PROJECT_NAME} \
+                        -f ${COMPOSE_FILE} \
+                        up -d
+                '''
+            }
+        }
+
+        stage('Backend Health Check') {
+            steps {
+                sh '''
+                    echo "========================================"
+                    echo "Waiting for Backend..."
+                    echo "========================================"
+
+                    BACKEND_OK=false
+
+                    for i in $(seq 1 30)
+                    do
+                        if docker compose \
+                            -p ${PROJECT_NAME} \
+                            -f ${COMPOSE_FILE} \
+                            exec -T backend \
+                            curl -fs http://localhost:8000/ >/dev/null 2>&1
+                        then
+                            echo ""
+                            echo "✅ Backend Started Successfully."
+                            BACKEND_OK=true
+                            break
+                        fi
+
+                        echo "Attempt $i/30..."
+                        sleep 5
+                    done
+
+                    if [ "$BACKEND_OK" != "true" ]
+                    then
+                        echo ""
+                        echo "❌ Backend Failed!"
+
+                        docker compose \
+                            -p ${PROJECT_NAME} \
+                            -f ${COMPOSE_FILE} \
+                            logs backend
+
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Frontend Health Check') {
+            steps {
+                sh '''
+                    echo "========================================"
+                    echo "Waiting for Frontend..."
+                    echo "========================================"
+
+                    FRONTEND_OK=false
+
+                    for i in $(seq 1 30)
+                    do
+                        if curl -fs http://localhost:3000 >/dev/null 2>&1
+                        then
+                            echo ""
+                            echo "✅ Frontend Started Successfully."
+                            FRONTEND_OK=true
+                            break
+                        fi
+
+                        echo "Attempt $i/30..."
+                        sleep 5
+                    done
+
+                    if [ "$FRONTEND_OK" != "true" ]
+                    then
+                        echo ""
+                        echo "❌ Frontend Failed!"
+
+                        docker compose \
+                            -p ${PROJECT_NAME} \
+                            -f ${COMPOSE_FILE} \
+                            logs frontend
+
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Running Containers') {
+            steps {
+                sh '''
+                    echo ""
+                    echo "========================================"
+                    echo "Running Containers"
+                    echo "========================================"
+
+                    docker ps
+                '''
+            }
+        }
+    }
+
+    post {
+
+        success {
+            sh '''
+                PUBLIC_IP=$(curl -s ifconfig.me)
+
                 echo ""
-                echo "❌ Frontend Failed to Start!"
-                docker compose -p ai-media-assistant -f docker-compose.prod.yml logs frontend
-                exit 1
-            fi
+                echo "=============================================="
+                echo "🎉 Deployment Successful"
+                echo "=============================================="
+                echo "Frontend : http://$PUBLIC_IP:3000"
+                echo "Backend  : http://$PUBLIC_IP:8000"
+                echo "Swagger  : http://$PUBLIC_IP:8000/docs"
+                echo "=============================================="
+            '''
+        }
 
-            echo ""
-            echo "========================================"
-            echo "🎉 Deployment Successful!"
-            echo "========================================"
-            echo ""
-            echo "Backend  : http://localhost:8000"
-            echo "Frontend : http://localhost:3000"
-        '''
+        failure {
+            sh '''
+                echo ""
+                echo "=============================================="
+                echo "❌ Deployment Failed"
+                echo "=============================================="
+
+                docker compose \
+                    -p ${PROJECT_NAME} \
+                    -f ${COMPOSE_FILE} \
+                    ps
+
+                echo ""
+
+                docker compose \
+                    -p ${PROJECT_NAME} \
+                    -f ${COMPOSE_FILE} \
+                    logs
+            '''
+        }
+
+        always {
+            sh '''
+                echo ""
+                echo "Cleaning Docker..."
+
+                docker image prune -f || true
+                docker builder prune -f || true
+            '''
+        }
     }
 }
