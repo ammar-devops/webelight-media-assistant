@@ -15,6 +15,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="AI Media Assistant",
     version="2.0.0",
+    redirect_slashes=False,
 )
 
 app.add_middleware(

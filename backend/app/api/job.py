@@ -10,7 +10,7 @@ from app.services.job_service import get_jobs
 router = APIRouter(tags=["Jobs"])
 
 
-@router.get("/")
+@router.get("")
 def jobs(db: Session = Depends(get_db)):
 
     return get_jobs(db)

@@ -12,7 +12,7 @@ from app.workers.processor import process_job
 router = APIRouter(tags=["Upload"])
 
 
-@router.post("/")
+@router.post("")
 async def upload(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
