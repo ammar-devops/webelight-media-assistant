@@ -8,105 +8,119 @@ pipeline {
 
     options {
         timestamps()
+        disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
     stages {
 
-        stage('Checkout Source') {
+        stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Project Information') {
+        stage('Environment Check') {
             steps {
                 sh '''
-                echo "========================================="
-                echo "AI Media Assistant Deployment"
-                echo "Workspace : $WORKSPACE"
-                echo "========================================="
-                pwd
-                ls -la
+                    echo "========================================"
+                    echo "AI Media Assistant Deployment"
+                    echo "========================================"
+
+                    pwd
+                    ls -la
+
+                    echo ""
+                    echo "Docker Version"
+                    docker --version
+
+                    echo ""
+                    echo "Docker Compose Version"
+                    docker compose version
+
+                    echo ""
+                    echo "Running Containers"
+                    docker ps
                 '''
             }
         }
 
-        stage('Verify Docker') {
+        stage('Validate Docker Compose') {
             steps {
                 sh '''
-                docker --version
-                docker compose version
+                    docker compose -f ${COMPOSE_FILE} config
                 '''
             }
         }
 
-        stage('Validate Compose File') {
+        stage('Build Images') {
             steps {
                 sh '''
-                docker compose -f ${COMPOSE_FILE} config
+                    docker compose \
+                        -p ${PROJECT_NAME} \
+                        -f ${COMPOSE_FILE} \
+                        build --pull
                 '''
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Stop Previous Deployment') {
             steps {
                 sh '''
-                docker compose -p ${PROJECT_NAME} \
-                -f ${COMPOSE_FILE} build
+                    docker compose \
+                        -p ${PROJECT_NAME} \
+                        -f ${COMPOSE_FILE} \
+                        down --remove-orphans || true
                 '''
             }
         }
 
-        stage('Stop Old Containers') {
+        stage('Start Deployment') {
             steps {
                 sh '''
-                docker compose -p ${PROJECT_NAME} \
-                -f ${COMPOSE_FILE} down || true
+                    docker compose \
+                        -p ${PROJECT_NAME} \
+                        -f ${COMPOSE_FILE} \
+                        up -d
                 '''
             }
         }
 
-        stage('Start Containers') {
+        stage('Backend Health Check') {
             steps {
                 sh '''
-                docker compose -p ${PROJECT_NAME} \
-                -f ${COMPOSE_FILE} up -d
+                    echo "Waiting for Backend..."
+
+                    for i in $(seq 1 30)
+                    do
+                        if curl -fs http://localhost:8000/ > /dev/null
+                        then
+                            echo "Backend Started Successfully."
+                            exit 0
+                        fi
+
+                        echo "Attempt $i/30"
+                        sleep 5
+                    done
+
+                    echo ""
+                    echo "Backend Failed"
+
+                    docker compose \
+                        -p ${PROJECT_NAME} \
+                        -f ${COMPOSE_FILE} \
+                        logs backend
+
+                    exit 1
                 '''
             }
         }
 
-        stage('Wait For Backend') {
+        stage('Frontend Health Check') {
             steps {
                 sh '''
-                echo "Waiting for backend..."
-
-                for i in $(seq 1 30)
-                do
-                    if curl -fs http://localhost:8000/ >/dev/null
-                    then
-                        echo "Backend Started Successfully."
-                        exit 0
-                    fi
-
-                    echo "Attempt $i / 30"
-                    sleep 5
-                done
-
-                echo "Backend failed to start."
-
-                docker compose -p ${PROJECT_NAME} \
-                -f ${COMPOSE_FILE} logs backend
-
-                exit 1
-                '''
-            }
-        }
-
-        stage('Check Frontend') {
-            steps {
-                sh '''
-                curl -I http://localhost:3000
+                    curl -fs http://localhost:3000 > /dev/null
+                    echo "Frontend Started Successfully."
                 '''
             }
         }
@@ -114,7 +128,8 @@ pipeline {
         stage('Running Containers') {
             steps {
                 sh '''
-                docker ps
+                    echo ""
+                    docker ps
                 '''
             }
         }
@@ -124,34 +139,40 @@ pipeline {
 
         success {
 
-            echo "Deployment Successful"
-
             sh '''
-            PUBLIC_IP=$(curl -s ifconfig.me)
+                PUBLIC_IP=$(curl -s ifconfig.me)
 
-            echo ""
-            echo "===================================="
-            echo "Frontend : http://$PUBLIC_IP:3000"
-            echo "Backend  : http://$PUBLIC_IP:8000"
-            echo "Swagger  : http://$PUBLIC_IP:8000/docs"
-            echo "===================================="
+                echo ""
+                echo "=============================================="
+                echo "Deployment Successful"
+                echo "=============================================="
+                echo "Frontend : http://$PUBLIC_IP:3000"
+                echo "Backend  : http://$PUBLIC_IP:8000"
+                echo "Swagger  : http://$PUBLIC_IP:8000/docs"
+                echo "=============================================="
             '''
         }
 
         failure {
 
-            echo "Deployment Failed"
-
             sh '''
-            docker compose -p ${PROJECT_NAME} \
-            -f ${COMPOSE_FILE} logs
+                echo ""
+                echo "Deployment Failed"
+
+                docker compose \
+                    -p ${PROJECT_NAME} \
+                    -f ${COMPOSE_FILE} \
+                    logs
             '''
         }
 
         always {
 
             sh '''
-            docker image prune -f || true
+                echo ""
+                echo "Cleaning Unused Docker Images..."
+
+                docker image prune -f || true
             '''
         }
     }
