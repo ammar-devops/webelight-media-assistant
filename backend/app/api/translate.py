@@ -1,0 +1,61 @@
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.services.job_service import get_job
+from app.services.translation_service import translate_text
+
+router = APIRouter(tags=["Translate"])
+
+
+class TranslationRequest(BaseModel):
+
+    job_id: str
+
+    target_language: str = "Hindi"
+
+
+@router.post("/")
+def translate(
+    request: TranslationRequest,
+    db: Session = Depends(get_db),
+):
+
+    job = get_job(
+        db,
+        request.job_id,
+    )
+
+    if job is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
+
+    if not job.transcript:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Transcript not available",
+        )
+
+    result = translate_text(
+        job.transcript,
+        request.target_language,
+    )
+
+    if not result["success"]:
+
+        raise HTTPException(
+            status_code=500,
+            detail=result["error"],
+        )
+
+    return {
+        "success": True,
+        "translation": result["translation"],
+    }
