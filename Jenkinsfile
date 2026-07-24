@@ -5,7 +5,6 @@ pipeline {
         PROJECT_NAME = "ai-media-assistant"
         COMPOSE_FILE = "docker-compose.prod.yml"
 
-        // Faster Docker Builds
         DOCKER_BUILDKIT = "1"
         COMPOSE_DOCKER_CLI_BUILD = "1"
     }
@@ -133,41 +132,19 @@ pipeline {
             }
         }
 
-        stage('Frontend Health Check') {
+        stage('Verify Frontend') {
             steps {
                 sh '''
                     echo "========================================"
-                    echo "Waiting for Frontend..."
+                    echo "Verifying Frontend..."
                     echo "========================================"
 
-                    FRONTEND_OK=false
+                    sleep 10
 
-                    for i in $(seq 1 30)
-                    do
-                        if curl -fs http://localhost:3000 >/dev/null 2>&1
-                        then
-                            echo ""
-                            echo "✅ Frontend Started Successfully."
-                            FRONTEND_OK=true
-                            break
-                        fi
+                    curl -fsI http://localhost:3000
 
-                        echo "Attempt $i/30..."
-                        sleep 5
-                    done
-
-                    if [ "$FRONTEND_OK" != "true" ]
-                    then
-                        echo ""
-                        echo "❌ Frontend Failed!"
-
-                        docker compose \
-                            -p ${PROJECT_NAME} \
-                            -f ${COMPOSE_FILE} \
-                            logs frontend
-
-                        exit 1
-                    fi
+                    echo ""
+                    echo "✅ Frontend Verified Successfully."
                 '''
             }
         }
