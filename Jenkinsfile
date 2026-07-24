@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         PROJECT_NAME = "ai-media-assistant"
-        COMPOSE_FILE = "docker-compose.yml"
+        COMPOSE_FILE = "docker-compose.prod.yml"
     }
 
     options {
