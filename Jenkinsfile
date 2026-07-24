@@ -8,7 +8,6 @@ pipeline {
 
     options {
         timestamps()
-        ansiColor('xterm')
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
@@ -16,25 +15,33 @@ pipeline {
 
         stage('Checkout Source') {
             steps {
-                echo "Checking out source..."
                 checkout scm
             }
         }
 
-        stage('Project Info') {
+        stage('Project Information') {
             steps {
                 sh '''
-                echo "========================================"
+                echo "========================================="
                 echo "AI Media Assistant Deployment"
-                echo "Workspace: $WORKSPACE"
+                echo "Workspace : $WORKSPACE"
+                echo "========================================="
                 pwd
                 ls -la
-                echo "========================================"
                 '''
             }
         }
 
-        stage('Validate Docker Compose') {
+        stage('Verify Docker') {
+            steps {
+                sh '''
+                docker --version
+                docker compose version
+                '''
+            }
+        }
+
+        stage('Validate Compose File') {
             steps {
                 sh '''
                 docker compose -f ${COMPOSE_FILE} config
@@ -42,16 +49,16 @@ pipeline {
             }
         }
 
-        stage('Build Images') {
+        stage('Build Docker Images') {
             steps {
                 sh '''
                 docker compose -p ${PROJECT_NAME} \
-                -f ${COMPOSE_FILE} build --no-cache
+                -f ${COMPOSE_FILE} build
                 '''
             }
         }
 
-        stage('Stop Previous Containers') {
+        stage('Stop Old Containers') {
             steps {
                 sh '''
                 docker compose -p ${PROJECT_NAME} \
@@ -74,18 +81,19 @@ pipeline {
                 sh '''
                 echo "Waiting for backend..."
 
-                for i in {1..30}
+                for i in $(seq 1 30)
                 do
-                    if curl -fs http://localhost:8000/ > /dev/null; then
-                        echo "Backend is UP"
+                    if curl -fs http://localhost:8000/ >/dev/null
+                    then
+                        echo "Backend Started Successfully."
                         exit 0
                     fi
 
-                    echo "Waiting..."
+                    echo "Attempt $i / 30"
                     sleep 5
                 done
 
-                echo "Backend failed."
+                echo "Backend failed to start."
 
                 docker compose -p ${PROJECT_NAME} \
                 -f ${COMPOSE_FILE} logs backend
@@ -95,7 +103,7 @@ pipeline {
             }
         }
 
-        stage('Frontend Check') {
+        stage('Check Frontend') {
             steps {
                 sh '''
                 curl -I http://localhost:3000
@@ -110,38 +118,29 @@ pipeline {
                 '''
             }
         }
-
     }
 
     post {
 
         success {
 
-            echo 'Deployment Successful.'
+            echo "Deployment Successful"
 
             sh '''
+            PUBLIC_IP=$(curl -s ifconfig.me)
+
+            echo ""
             echo "===================================="
-
-            echo "Backend:"
-            echo "http://$(curl -s ifconfig.me):8000"
-
-            echo ""
-
-            echo "Swagger:"
-            echo "http://$(curl -s ifconfig.me):8000/docs"
-
-            echo ""
-
-            echo "Frontend:"
-            echo "http://$(curl -s ifconfig.me):3000"
-
+            echo "Frontend : http://$PUBLIC_IP:3000"
+            echo "Backend  : http://$PUBLIC_IP:8000"
+            echo "Swagger  : http://$PUBLIC_IP:8000/docs"
             echo "===================================="
             '''
         }
 
         failure {
 
-            echo 'Deployment Failed.'
+            echo "Deployment Failed"
 
             sh '''
             docker compose -p ${PROJECT_NAME} \
