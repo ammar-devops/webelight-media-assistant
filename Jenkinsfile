@@ -89,22 +89,29 @@ pipeline {
         stage('Backend Health Check') {
             steps {
                 sh '''
+                    echo "========================================"
                     echo "Waiting for Backend..."
+                    echo "========================================"
 
                     for i in $(seq 1 30)
                     do
-                        if curl -fs http://localhost:8000/ > /dev/null
+                        if docker compose \
+                            -p ${PROJECT_NAME} \
+                            -f ${COMPOSE_FILE} \
+                            exec -T backend \
+                            curl -fs http://localhost:8000/ >/dev/null
                         then
+                            echo ""
                             echo "Backend Started Successfully."
                             exit 0
                         fi
 
-                        echo "Attempt $i/30"
+                        echo "Attempt $i/30..."
                         sleep 5
                     done
 
                     echo ""
-                    echo "Backend Failed"
+                    echo "Backend Failed!"
 
                     docker compose \
                         -p ${PROJECT_NAME} \
@@ -119,7 +126,10 @@ pipeline {
         stage('Frontend Health Check') {
             steps {
                 sh '''
-                    curl -fs http://localhost:3000 > /dev/null
+                    echo "Checking Frontend..."
+
+                    curl -fs http://localhost:3000 >/dev/null
+
                     echo "Frontend Started Successfully."
                 '''
             }
@@ -129,6 +139,10 @@ pipeline {
             steps {
                 sh '''
                     echo ""
+                    echo "========================================"
+                    echo "Running Containers"
+                    echo "========================================"
+
                     docker ps
                 '''
             }
@@ -138,7 +152,6 @@ pipeline {
     post {
 
         success {
-
             sh '''
                 PUBLIC_IP=$(curl -s ifconfig.me)
 
@@ -154,10 +167,18 @@ pipeline {
         }
 
         failure {
-
             sh '''
                 echo ""
+                echo "=============================================="
                 echo "Deployment Failed"
+                echo "=============================================="
+
+                docker compose \
+                    -p ${PROJECT_NAME} \
+                    -f ${COMPOSE_FILE} \
+                    ps
+
+                echo ""
 
                 docker compose \
                     -p ${PROJECT_NAME} \
@@ -167,7 +188,6 @@ pipeline {
         }
 
         always {
-
             sh '''
                 echo ""
                 echo "Cleaning Unused Docker Images..."
