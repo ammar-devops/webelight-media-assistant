@@ -47,3 +47,10 @@ def home():
         "version": "2.0.0",
         "status": "running",
     }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy"
+    }

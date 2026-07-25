@@ -1,16 +1,28 @@
 import os
 
-import ollama
 from dotenv import load_dotenv
+from ollama import Client
 
 load_dotenv()
 
-MODEL_NAME = os.getenv("OLLAMA_MODEL", "llama3.2")
+OLLAMA_HOST = os.getenv(
+    "OLLAMA_HOST",
+    "http://host.docker.internal:11434",
+)
+
+MODEL_NAME = os.getenv(
+    "OLLAMA_MODEL",
+    "qwen2.5:1.5b",
+)
+
+client = Client(host=OLLAMA_HOST)
 
 
 def generate_summary(transcript: str):
+
     try:
-        response = ollama.chat(
+
+        response = client.chat(
             model=MODEL_NAME,
             messages=[
                 {
@@ -27,14 +39,13 @@ def generate_summary(transcript: str):
             ],
         )
 
-        summary = response["message"]["content"]
-
         return {
             "success": True,
-            "summary": summary,
+            "summary": response["message"]["content"],
         }
 
     except Exception as e:
+
         return {
             "success": False,
             "summary": "",
